@@ -5,28 +5,29 @@
 
 package org.jetbrains.kotlin.ir.backend.js.ic
 
+import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.JsIrProgramFragment
 import java.io.File
 
-class SrcFileArtifact(val srcFilePath: String, astArtifactFilePath: String, astBinaryData: ByteArray?) {
-    class Artifact(private val artifactFilePath: String, private var binaryData: ByteArray?) {
-        fun fetchBinaryAst(): ByteArray? {
-            if (binaryData == null) {
-                binaryData = File(artifactFilePath).ifExists { readBytes() }
-            }
-            return binaryData
-        }
+class SrcFileArtifact(val srcFilePath: String, val fragment: JsIrProgramFragment?, astArtifactFilePath: String) {
+    class Artifact(private val artifactFilePath: String) {
+        fun fetchData() = File(artifactFilePath).ifExists { readBytes() }
     }
 
-    val astFileArtifact = Artifact(astArtifactFilePath, astBinaryData)
+    val astFileArtifact = Artifact(astArtifactFilePath)
 }
 
 class KLibArtifact(val moduleName: String, val fileArtifacts: List<SrcFileArtifact>)
 
 abstract class ArtifactCache {
     protected val binaryAsts = mutableMapOf<String, ByteArray>()
+    protected val fragments = mutableMapOf<String, JsIrProgramFragment>()
 
-    fun saveBinaryAst(srcPath: String, astData: ByteArray) {
-        binaryAsts[srcPath] = astData
+    fun saveBinaryAst(srcPath: String, binaryAst: ByteArray) {
+        binaryAsts[srcPath] = binaryAst
+    }
+
+    fun saveFragment(srcPath: String, fragment: JsIrProgramFragment) {
+        fragments[srcPath] = fragment
     }
 
     abstract fun fetchArtifacts(): KLibArtifact

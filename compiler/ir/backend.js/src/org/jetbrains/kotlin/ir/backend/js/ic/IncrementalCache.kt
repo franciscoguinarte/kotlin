@@ -236,6 +236,7 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
         usedInlineFunctions.clear()
         srcFilesInOrderFromKLib = emptyList()
         deletedSrcFiles = emptySet()
+        binaryAsts.clear()
     }
 
     fun commitCacheForRemovedSrcFiles() {
@@ -258,7 +259,7 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
     override fun fetchArtifacts() = KLibArtifact(
         moduleName = cacheFastInfo.moduleName ?: error("Internal error: missing module name"),
         fileArtifacts = fingerprints.keys.map {
-            SrcFileArtifact(it, getBinaryAstPath(it).absolutePath, binaryAsts[it])
+            SrcFileArtifact(it, fragments[it], getBinaryAstPath(it).absolutePath)
         })
 
     fun invalidate() {
@@ -268,6 +269,7 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
         usedInlineFunctions.clear()
         fingerprints.clear()
         binaryAsts.clear()
+        fragments.clear()
         cacheFastInfo = CacheFastInfo()
         srcFilesInOrderFromKLib = emptyList()
         deletedSrcFiles = emptySet()
@@ -280,6 +282,7 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
         usedInlineFunctions.remove(srcPath)
         fingerprints.remove(srcPath)
         binaryAsts.remove(srcPath)
+        fragments.remove(srcPath)
     }
 
     private fun KotlinLibrary.filesAndSigReaders(): List<Pair<String, IdSignatureDeserializer>> {

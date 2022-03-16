@@ -27,8 +27,8 @@ import java.io.File
 private class TestArtifactCache(var moduleName: String? = null) : ArtifactCache() {
     override fun fetchArtifacts() = KLibArtifact(
         moduleName = moduleName ?: error("Module name is not set"),
-        fileArtifacts = binaryAsts.entries.map {
-            SrcFileArtifact(it.key, "", it.value)
+        fileArtifacts = fragments.entries.map {
+            SrcFileArtifact(it.key, it.value, "")
         }
     )
 

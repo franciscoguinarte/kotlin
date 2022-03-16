@@ -99,9 +99,11 @@ fun compileWithIC(
         module.files.filter { it.fileEntry.name in dirties }
     } ?: module.files
 
-    val ast = transformer.generateBinaryAst(dirtyFiles, allModules)
-
-    ast.entries.forEach { (path, bytes) -> artifactCache.saveBinaryAst(path, bytes) }
+    val astAndFragments = transformer.generateBinaryAst(dirtyFiles, allModules)
+    astAndFragments.forEach {
+        artifactCache.saveFragment(it.srcPath, it.fragment)
+        artifactCache.saveBinaryAst(it.srcPath, it.binaryAst)
+    }
 }
 
 fun lowerPreservingTags(modules: Iterable<IrModuleFragment>, context: JsIrBackendContext, phaseConfig: PhaseConfig, controller: WholeWorldStageController) {
@@ -131,12 +133,13 @@ fun generateJsFromAst(
     fun compilationOutput(multiModule: Boolean): CompilationOutputs {
         val deserializer = JsIrAstDeserializer()
         val jsIrProgram = JsIrProgram(caches.map { cacheArtifact ->
-            JsIrModule(
-                cacheArtifact.moduleName.safeModuleName,
-                sanitizeName(cacheArtifact.moduleName.safeModuleName),
-                cacheArtifact.fileArtifacts.sortedBy { it.srcFilePath }.mapNotNull { srcFileArtifact ->
-                    srcFileArtifact.astFileArtifact.fetchBinaryAst()?.let { deserializer.deserialize(ByteArrayInputStream(it)) }
-                })
+            val moduleName = cacheArtifact.moduleName.safeModuleName
+            val fragments = cacheArtifact.fileArtifacts.sortedBy { it.srcFilePath }.mapNotNull { srcFileArtifact ->
+                srcFileArtifact.fragment ?: srcFileArtifact.astFileArtifact.fetchData()?.let {
+                    deserializer.deserialize(ByteArrayInputStream(it))
+                }
+            }
+            JsIrModule(moduleName, moduleName, fragments)
         })
 
         return generateWrappedModuleBody(
