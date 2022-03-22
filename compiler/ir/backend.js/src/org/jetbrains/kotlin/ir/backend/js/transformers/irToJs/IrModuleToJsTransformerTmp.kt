@@ -307,7 +307,7 @@ class IrModuleToJsTransformerTmp(
     }
 }
 
-fun generateWrappedModuleBody(
+private fun generateWrappedModuleBody(
     multiModule: Boolean,
     mainModuleName: String,
     moduleKind: ModuleKind,
@@ -360,7 +360,7 @@ fun generateWrappedModuleBody(
     }
 }
 
-private fun generateSingleWrappedModuleBody(
+fun generateSingleWrappedModuleBody(
     moduleName: String,
     moduleKind: ModuleKind,
     fragments: List<JsIrProgramFragment>,

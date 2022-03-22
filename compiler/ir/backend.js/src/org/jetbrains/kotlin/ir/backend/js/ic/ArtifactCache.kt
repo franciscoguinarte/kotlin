@@ -5,18 +5,35 @@
 
 package org.jetbrains.kotlin.ir.backend.js.ic
 
+import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.JsIrModule
 import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.JsIrProgramFragment
+import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.safeModuleName
+import org.jetbrains.kotlin.ir.backend.js.utils.serialization.JsIrAstDeserializer
+import java.io.ByteArrayInputStream
 import java.io.File
 
-class SrcFileArtifact(val srcFilePath: String, val fragment: JsIrProgramFragment?, astArtifactFilePath: String) {
-    class Artifact(private val artifactFilePath: String) {
-        fun fetchData() = File(artifactFilePath).ifExists { readBytes() }
+class SrcFileArtifact(val srcFilePath: String, private val fragment: JsIrProgramFragment?, private val astArtifact: File? = null) {
+    fun loadJsIrFragment(deserializer: JsIrAstDeserializer): JsIrProgramFragment? {
+        if (fragment != null) {
+            return fragment
+        }
+        return astArtifact?.ifExists { readBytes() }?.let {
+            deserializer.deserialize(ByteArrayInputStream(it))
+        }
     }
 
-    val astFileArtifact = Artifact(astArtifactFilePath)
+    fun isModified() = fragment != null
 }
 
-class KLibArtifact(val moduleName: String, val fileArtifacts: List<SrcFileArtifact>)
+class ModuleArtifact(moduleName: String, val fileArtifacts: List<SrcFileArtifact>, val artifactsDir: File? = null) {
+    val moduleSafeName = moduleName.safeModuleName
+
+    fun loadJsIrModule(): JsIrModule {
+        val deserializer = JsIrAstDeserializer()
+        val fragments = fileArtifacts.sortedBy { it.srcFilePath }.mapNotNull { it.loadJsIrFragment(deserializer) }
+        return JsIrModule(moduleSafeName, moduleSafeName, fragments)
+    }
+}
 
 abstract class ArtifactCache {
     protected val binaryAsts = mutableMapOf<String, ByteArray>()
@@ -30,5 +47,5 @@ abstract class ArtifactCache {
         fragments[srcPath] = fragment
     }
 
-    abstract fun fetchArtifacts(): KLibArtifact
+    abstract fun fetchArtifacts(): ModuleArtifact
 }

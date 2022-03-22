@@ -254,7 +254,7 @@ class CacheUpdater(
         }
     }
 
-    fun actualizeCaches(callback: (CacheUpdateStatus, String) -> Unit): List<KLibArtifact> {
+    fun actualizeCaches(callback: (CacheUpdateStatus, String) -> Unit): List<ModuleArtifact> {
         val libraries = loadLibraries()
         val dependencyGraph = buildDependenciesGraph(libraries)
         val configHash = compilerConfiguration.configHashForIC()

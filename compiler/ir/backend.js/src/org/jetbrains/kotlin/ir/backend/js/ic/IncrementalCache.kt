@@ -256,11 +256,13 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
         clearCacheAfterCommit()
     }
 
-    override fun fetchArtifacts() = KLibArtifact(
+    override fun fetchArtifacts() = ModuleArtifact(
         moduleName = cacheFastInfo.moduleName ?: error("Internal error: missing module name"),
         fileArtifacts = fingerprints.keys.map {
-            SrcFileArtifact(it, fragments[it], getBinaryAstPath(it).absolutePath)
-        })
+            SrcFileArtifact(it, fragments[it], getBinaryAstPath(it))
+        },
+        artifactsDir = cacheDir
+    )
 
     fun invalidate() {
         cacheDir.deleteRecursively()

@@ -10,14 +10,13 @@ import org.jetbrains.kotlin.backend.common.phaser.PhaserState
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.backend.js.ic.ArtifactCache
-import org.jetbrains.kotlin.ir.backend.js.ic.KLibArtifact
+import org.jetbrains.kotlin.ir.backend.js.ic.JsMultiModuleCache
+import org.jetbrains.kotlin.ir.backend.js.ic.ModuleArtifact
 import org.jetbrains.kotlin.ir.backend.js.lower.collectNativeImplementations
 import org.jetbrains.kotlin.ir.backend.js.lower.generateJsTests
 import org.jetbrains.kotlin.ir.backend.js.lower.moveBodilessDeclarationsToSeparatePlace
 import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsIrLinker
 import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.*
-import org.jetbrains.kotlin.ir.backend.js.utils.sanitizeName
-import org.jetbrains.kotlin.ir.backend.js.utils.serialization.JsIrAstDeserializer
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltInsOverDescriptors
 import org.jetbrains.kotlin.ir.util.ExternalDependenciesGenerator
@@ -25,7 +24,6 @@ import org.jetbrains.kotlin.ir.util.noUnboundLeft
 import org.jetbrains.kotlin.js.config.RuntimeDiagnostic
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.serialization.js.ModuleKind
-import java.io.ByteArrayInputStream
 
 @Suppress("UNUSED_PARAMETER")
 @OptIn(ObsoleteDescriptorBasedAPI::class)
@@ -118,40 +116,4 @@ fun lowerPreservingTags(modules: Iterable<IrModuleFragment>, context: JsIrBacken
     }
 
     controller.currentStage = pirLowerings.size + 1
-}
-
-
-@Suppress("UNUSED_PARAMETER")
-fun generateJsFromAst(
-    mainModuleName: String,
-    moduleKind: ModuleKind,
-    sourceMapsInfo: SourceMapsInfo?,
-    translationModes: Set<TranslationMode>,
-    caches: List<KLibArtifact>,
-    relativeRequirePath: Boolean = false,
-): CompilerResult {
-    fun compilationOutput(multiModule: Boolean): CompilationOutputs {
-        val deserializer = JsIrAstDeserializer()
-        val jsIrProgram = JsIrProgram(caches.map { cacheArtifact ->
-            val moduleName = cacheArtifact.moduleName.safeModuleName
-            val fragments = cacheArtifact.fileArtifacts.sortedBy { it.srcFilePath }.mapNotNull { srcFileArtifact ->
-                srcFileArtifact.fragment ?: srcFileArtifact.astFileArtifact.fetchData()?.let {
-                    deserializer.deserialize(ByteArrayInputStream(it))
-                }
-            }
-            JsIrModule(moduleName, moduleName, fragments)
-        })
-
-        return generateWrappedModuleBody(
-            multiModule = multiModule,
-            mainModuleName = mainModuleName,
-            moduleKind = moduleKind,
-            jsIrProgram,
-            sourceMapsInfo = sourceMapsInfo,
-            relativeRequirePath = relativeRequirePath,
-            generateScriptModule = false,
-        )
-    }
-
-    return CompilerResult(translationModes.associate { it to compilationOutput(it.perModule) }, null)
 }
