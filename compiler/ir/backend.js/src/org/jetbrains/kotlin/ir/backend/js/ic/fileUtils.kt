@@ -33,3 +33,15 @@ internal inline fun File.useCodedOutput(f: CodedOutputStream.() -> Unit) {
         out.flush()
     }
 }
+
+internal inline fun <T> CodedOutputStream.writeCollection(collection: Collection<T>, f: (T) -> Unit) {
+    writeInt32NoTag(collection.size)
+    collection.forEach { f(it) }
+}
+
+internal inline fun <T, C : MutableCollection<T>> CodedInputStream.readCollection(collection: C, f: () -> T): C {
+    repeat(readInt32()) {
+        collection.plusAssign(f())
+    }
+    return collection
+}

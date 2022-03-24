@@ -16,55 +16,67 @@ class JsExecutableProducer(
     private val caches: List<ModuleArtifact>,
     private val relativeRequirePath: Boolean
 ) {
-    fun buildExecutable(multiModule: Boolean) = if (multiModule) {
-        buildMultiModuleExecutable()
+    fun buildExecutable(multiModule: Boolean, rebuildCallback: (String) -> Unit = {}) = if (multiModule) {
+        buildMultiModuleExecutable(rebuildCallback)
     } else {
-        buildSingleModuleExecutable()
+        buildSingleModuleExecutable(rebuildCallback)
     }
 
-    private fun buildSingleModuleExecutable(): CompilationOutputs {
+    private fun buildSingleModuleExecutable(rebuildCallback: (String) -> Unit): CompilationOutputs {
         val program = JsIrProgram(caches.map { cacheArtifact -> cacheArtifact.loadJsIrModule() })
-        return generateSingleWrappedModuleBody(
+        val out = generateSingleWrappedModuleBody(
             moduleName = mainModuleName,
             moduleKind = moduleKind,
             fragments = program.modules.flatMap { it.fragments },
             sourceMapsInfo = sourceMapsInfo,
             generateScriptModule = false,
-            generateCallToMain = true,
+            generateCallToMain = true
         )
+        rebuildCallback(mainModuleName)
+        return out
     }
 
-    private fun buildMultiModuleExecutable(): CompilationOutputs {
+    private fun buildMultiModuleExecutable(rebuildCallback: (String) -> Unit): CompilationOutputs {
         val jsMultiModuleCache = JsMultiModuleCache(caches)
-        val cachedProgram = jsMultiModuleCache.loadProgramFromCache()
+        val cachedProgram = jsMultiModuleCache.loadProgramHeadersFromCache()
 
-        val resolver = CrossModuleDependenciesResolver(cachedProgram.map { it.header })
+        val resolver = CrossModuleDependenciesResolver(cachedProgram.map { it.jsIrHeader })
         val crossModuleReferences = resolver.resolveCrossModuleDependencies(relativeRequirePath)
 
-        val cachedMainModule = cachedProgram.last()
-        val cachedOtherModules = cachedProgram.dropLast(1)
+        jsMultiModuleCache.loadRequiredJsIrModules(crossModuleReferences)
 
-        fun JsMultiModuleCache.CachedModule.compileModule(moduleName: String, generateCallToMain: Boolean): CompilationOutputs {
-            if (header.associatedModule != null) {
-                val compiledModule = generateSingleWrappedModuleBody(
-                    moduleName = moduleName,
-                    moduleKind = moduleKind,
-                    header.associatedModule.fragments,
-                    sourceMapsInfo = sourceMapsInfo,
-                    generateScriptModule = false,
-                    generateCallToMain = generateCallToMain,
-                    crossModuleReferences[header.associatedModule]
-                        ?: error("Internal error: cannot find cross references for module $moduleName")
-                )
-                jsMultiModuleCache.commitCompiledJsCode(artifact, compiledModule)
-                return compiledModule
+        fun JsMultiModuleCache.CachedModuleInfo.compileModule(moduleName: String, generateCallToMain: Boolean): CompilationOutputs {
+            if (jsIrHeader.associatedModule == null) {
+                val compilationOutputs = jsMultiModuleCache.fetchCompiledJsCode(artifact)
+                if (compilationOutputs != null) {
+                    return compilationOutputs
+                }
+                jsIrHeader.associatedModule = artifact.loadJsIrModule()
             }
-            return compilationOutputs ?: error("Internal error: cannot find cached output for module $moduleName")
+            val associatedModule = jsIrHeader.associatedModule ?: error("Internal error: cannot load module $moduleName")
+            val crossRef = crossModuleReferences[jsIrHeader] ?: error("Internal error: cannot find cross references for module $moduleName")
+            crossRef.initJsImportsForModule(associatedModule)
+
+            val compiledModule = generateSingleWrappedModuleBody(
+                moduleName = moduleName,
+                moduleKind = moduleKind,
+                associatedModule.fragments,
+                sourceMapsInfo = sourceMapsInfo,
+                generateScriptModule = false,
+                generateCallToMain = generateCallToMain,
+                crossModuleReferences = crossRef
+            )
+            jsMultiModuleCache.commitCompiledJsCode(artifact, compiledModule)
+            rebuildCallback(moduleName)
+            return compiledModule
         }
 
+        val cachedMainModule = cachedProgram.last()
         val mainModule = cachedMainModule.compileModule(mainModuleName, true)
+
+        val cachedOtherModules = cachedProgram.dropLast(1)
         val dependencies = cachedOtherModules.map {
-            it.header.externalModuleName to it.compileModule(it.header.externalModuleName, false)
+            it.jsIrHeader.externalModuleName to it.compileModule(it.jsIrHeader.externalModuleName, false)
         }
         return CompilationOutputs(mainModule.jsCode, mainModule.jsProgram, mainModule.sourceMap, dependencies)
     }

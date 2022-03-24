@@ -296,7 +296,12 @@ class K2JsIrCompiler : CLICompiler<K2JSCompilerArguments>() {
                     relativeRequirePath = true
                 )
 
-                val outputs = jsExecutableProducer.buildExecutable(arguments.irPerModule)
+                val outputs = jsExecutableProducer.buildExecutable(
+                    multiModule = arguments.irPerModule,
+                    rebuildCallback = { rebuiltModule ->
+                        messageCollector.report(INFO, "IC module builder rebuilt module [${File(rebuiltModule).name}]")
+                    }
+                )
 
                 outputFile.write(outputs)
                 outputs.dependencies.forEach { (name, content) ->
