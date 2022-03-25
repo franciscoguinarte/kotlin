@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.backend.wasm.ir2wasm
 
 import org.jetbrains.kotlin.backend.wasm.WasmBackendContext
 import org.jetbrains.kotlin.backend.wasm.lower.WasmSignature
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrField
 import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.symbols.*
@@ -19,9 +20,15 @@ interface WasmBaseCodegenContext {
     val scratchMemAddr: WasmSymbol<Int>
 
     fun referenceFunction(irFunction: IrFunctionSymbol): WasmSymbol<WasmFunction>
-    fun referenceGlobal(irSymbol: IrSymbol): WasmSymbol<WasmGlobal>
+    fun referenceGlobalField(irField: IrFieldSymbol): WasmSymbol<WasmGlobal>
+    fun referenceGlobalVTable(irClass: IrClassSymbol): WasmSymbol<WasmGlobal>
+    fun referenceGlobalClassITable(irClass: IrClassSymbol): WasmSymbol<WasmGlobal>
     fun referenceGcType(irClass: IrClassSymbol): WasmSymbol<WasmTypeDeclaration>
     fun referenceVTableGcType(irClass: IrClassSymbol): WasmSymbol<WasmTypeDeclaration>
+    fun referenceClassITableGcTypeForInterface(irClass: IrClassSymbol): WasmSymbol<WasmTypeDeclaration>
+    fun defineClassITableGcTypeForInterface(irClass: IrClassSymbol, wasmType: WasmTypeDeclaration)
+    fun referenceClassITableInterfaceSlot(irClass: IrClassSymbol): WasmSymbol<Int>
+    fun defineClassITableInterfaceSlot(irClass: IrClassSymbol, slot: Int)
     fun referenceFunctionType(irFunction: IrFunctionSymbol): WasmSymbol<WasmFunctionType>
 
     fun referenceClassId(irClass: IrClassSymbol): WasmSymbol<Int>

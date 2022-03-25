@@ -12,9 +12,7 @@ import org.jetbrains.kotlin.backend.common.ir.isOverridable
 import org.jetbrains.kotlin.backend.common.ir.returnType
 import org.jetbrains.kotlin.backend.wasm.WasmBackendContext
 import org.jetbrains.kotlin.backend.wasm.WasmSymbols
-import org.jetbrains.kotlin.backend.wasm.utils.getWasmArrayAnnotation
-import org.jetbrains.kotlin.backend.wasm.utils.getWasmOpAnnotation
-import org.jetbrains.kotlin.backend.wasm.utils.hasWasmNoOpCastAnnotation
+import org.jetbrains.kotlin.backend.wasm.utils.*
 import org.jetbrains.kotlin.backend.wasm.utils.isCanonical
 import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
@@ -30,7 +28,10 @@ import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 import org.jetbrains.kotlin.wasm.ir.*
 
-class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorVoid {
+class BodyGenerator(
+    val context: WasmFunctionCodegenContext,
+    private val hierarchyIntersectedUnions: DiscriminatedUnions<IrClass>
+) : IrElementVisitorVoid {
     val body: WasmExpressionBuilder = context.bodyGen
 
     // Shortcuts
@@ -118,7 +119,7 @@ class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorV
                 generateInstanceFieldAccess(field)
             }
         } else {
-            body.buildGetGlobal(context.referenceGlobal(field.symbol))
+            body.buildGetGlobal(context.referenceGlobalField(field.symbol))
         }
     }
 
@@ -155,7 +156,7 @@ class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorV
             )
         } else {
             generateExpression(expression.value)
-            body.buildSetGlobal(context.referenceGlobal(expression.symbol))
+            body.buildSetGlobal(context.referenceGlobalField(expression.symbol))
         }
 
         body.buildGetUnit()
@@ -204,8 +205,13 @@ class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorV
             return
         }
 
-        body.buildGetGlobal(context.referenceGlobal(klass.symbol)) //VTable load
-
+        body.buildGetGlobal(context.referenceGlobalVTable(klass.symbol)) //VTable load
+        //ITable load
+        if (klass.hasInterfaceForClass()) {
+            body.buildGetGlobal(context.referenceGlobalClassITable(klass.symbol))
+        } else {
+            body.buildRefNull(WasmHeapType.Simple.Data)
+        }
         val wasmClassId = context.referenceClassId(klass.symbol)
 
         val irFields: List<IrField> = klass.allFields(backendContext.irBuiltIns)
@@ -243,7 +249,13 @@ class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorV
             val structTypeName = context.referenceGcType(klass.symbol)
             val klassId = context.referenceClassId(klass.symbol)
 
-            body.buildGetGlobal(context.referenceGlobal(klass.symbol)) //VTable load
+            body.buildGetGlobal(context.referenceGlobalVTable(klass.symbol)) //VTable load
+            //ITable load
+            if (klass.hasInterfaceForClass()) {
+                body.buildGetGlobal(context.referenceGlobalClassITable(klass.symbol))
+            } else {
+                body.buildRefNull(WasmHeapType.Simple.Data)
+            }
             body.buildConstI32Symbol(klassId)
             body.buildConstI32(0) // Any::_hashCode
             generateExpression(call.getValueArgument(0)!!)
@@ -304,13 +316,31 @@ class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorV
 //                    symbol = context.referenceFunctionType(function.symbol)
 //                )
             } else {
-                generateExpression(call.dispatchReceiver!!)
-                body.buildConstI32Symbol(context.referenceInterfaceId(klass.symbol))
-                body.buildCall(context.referenceFunction(wasmSymbols.getInterfaceImplId))
-                body.buildCallIndirect(
-                    tableIdx = WasmSymbolIntWrapper(context.referenceInterfaceTable(function.symbol)),
-                    symbol = context.referenceFunctionType(function.symbol)
-                )
+
+                if (hierarchyIntersectedUnions.hasElement(klass)) {
+                    generateExpression(call.dispatchReceiver!!)
+
+                    body.buildStructGet(context.referenceGcType(irBuiltIns.anyClass), WasmSymbol(1))
+
+                    val classITableReference = context.referenceClassITableGcTypeForInterface(klass.symbol)
+                    body.buildRefCastStatic(classITableReference)
+                    body.buildStructGet(classITableReference, context.referenceClassITableInterfaceSlot(klass.symbol))
+
+                    val metadata = InterfaceMetadata(klass, backendContext.irBuiltIns)
+                    val vfSlot = metadata.methods.indexOfFirst { it.function == function }
+
+                    body.buildStructGet(context.referenceVTableGcType(klass.symbol), WasmSymbol(vfSlot))
+                    body.buildInstr(WasmOp.CALL_REF)
+                } else {
+                    body.buildUnreachable()
+                }
+
+//                body.buildConstI32Symbol(context.referenceInterfaceId(klass.symbol))
+//                body.buildCall(context.referenceFunction(wasmSymbols.getInterfaceImplId))
+//                body.buildCallIndirect(
+//                    tableIdx = WasmSymbolIntWrapper(context.referenceInterfaceTable(function.symbol)),
+//                    symbol = context.referenceFunctionType(function.symbol)
+//                )
             }
 
         } else {
@@ -444,7 +474,8 @@ class BodyGenerator(val context: WasmFunctionCodegenContext) : IrElementVisitorV
 
     override fun visitReturn(expression: IrReturn) {
         if (expression.returnTargetSymbol.owner.returnType(backendContext) == irBuiltIns.unitType &&
-            expression.returnTargetSymbol.owner != unitGetInstance) {
+            expression.returnTargetSymbol.owner != unitGetInstance
+        ) {
             generateStatement(expression.value)
         } else {
             generateExpression(expression.value)

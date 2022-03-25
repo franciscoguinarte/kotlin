@@ -9,18 +9,20 @@ class WasmIrExpressionBuilder(
     val expression: MutableList<WasmInstr>
 ) : WasmExpressionBuilder() {
 
-    override fun buildInstr(op: WasmOp, vararg immediates: WasmImmediate) {
-        val nextInstr = WasmInstr(op, immediates.toList())
-        val foldedInstrs = foldWasmInstructions(expression.lastOrNull(), nextInstr)
+    override fun buildInstr(instr: WasmInstr) {
+        val foldedInstrs = foldWasmInstructions(expression.lastOrNull(), instr)
 
         if (foldedInstrs == null) {
-            expression += nextInstr
+            expression += instr
         } else {
             expression.removeLastOrNull()
             expression += foldedInstrs
         }
     }
 
+    override fun buildInstr(op: WasmOp, vararg immediates: WasmImmediate) {
+        buildInstr(WasmInstr(op, immediates.toList()))
+    }
 
     override var numberOfNestedBlocks: Int = 0
         set(value) {

@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.backend.wasm.ir2wasm
 
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.wasm.ir.*
 
@@ -13,7 +14,9 @@ import org.jetbrains.kotlin.wasm.ir.*
  */
 interface WasmModuleCodegenContext : WasmBaseCodegenContext {
     fun defineFunction(irFunction: IrFunctionSymbol, wasmFunction: WasmFunction)
-    fun defineGlobal(irSymbol: IrSymbol, wasmGlobal: WasmGlobal)
+    fun defineGlobalField(irField: IrFieldSymbol, wasmGlobal: WasmGlobal)
+    fun defineGlobalVTable(irClass: IrClassSymbol, wasmGlobal: WasmGlobal)
+    fun defineGlobalClassITable(irClass: IrClassSymbol, wasmGlobal: WasmGlobal)
     fun defineGcType(irClass: IrClassSymbol, wasmType: WasmTypeDeclaration)
     fun defineVTableGcType(irClass: IrClassSymbol, wasmType: WasmTypeDeclaration)
     fun defineFunctionType(irFunction: IrFunctionSymbol, wasmFunctionType: WasmFunctionType)
@@ -26,8 +29,11 @@ interface WasmModuleCodegenContext : WasmBaseCodegenContext {
     fun registerVirtualFunction(irFunction: IrSimpleFunctionSymbol)
     fun registerInterface(irInterface: IrClassSymbol)
     fun registerClass(irClass: IrClassSymbol)
+    fun registerITableInitializer(interfaceImplementation: InterfaceImplementation, initializer: List<WasmInstr>)
 
     fun generateTypeInfo(irClass: IrClassSymbol, typeInfo: ConstantDataElement)
+
+    fun registerInterfaceHierarchyUnion(interfaceList: List<IrClass>)
 
     fun registerInterfaceImplementationMethod(
         interfaceImplementation: InterfaceImplementation,

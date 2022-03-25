@@ -133,14 +133,14 @@ abstract class BasicWasmBoxTest(
                 allowIncompleteImplementations = false,
             )
 
-            eliminateDeadDeclarations(allModules, backendContext)
-
-            val compilerResultWithDCE = compileWasm(
-                allModules = allModules,
-                backendContext = backendContext,
-                emitNameSection = true,
-                allowIncompleteImplementations = true,
-            )
+//            eliminateDeadDeclarations(allModules, backendContext)
+//
+//            val compilerResultWithDCE = compileWasm(
+//                allModules = allModules,
+//                backendContext = backendContext,
+//                emitNameSection = true,
+//                allowIncompleteImplementations = true,
+//            )
 
             val testJsQuiet = """
                 import exports from './index.js';
@@ -190,7 +190,7 @@ abstract class BasicWasmBoxTest(
             }
 
             compileAndRunD8Test("d8", compilerResult)
-            compileAndRunD8Test("d8-dce", compilerResultWithDCE)
+            //compileAndRunD8Test("d8-dce", compilerResultWithDCE)
 
             if (debugMode >= DebugMode.SUPER_DEBUG) {
                 fun writeBrowserTest(name: String, res: WasmCompilerResult) {
@@ -216,7 +216,7 @@ abstract class BasicWasmBoxTest(
                 }
 
                 writeBrowserTest("browser", compilerResult)
-                writeBrowserTest("browser-dce", compilerResultWithDCE)
+                //writeBrowserTest("browser-dce", compilerResultWithDCE)
             }
 
         }

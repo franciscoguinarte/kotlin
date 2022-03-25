@@ -3,14 +3,31 @@
 // IGNORE_LIGHT_ANALYSIS
 // WITH_STDLIB
 
-fun box(): String {
-    var result = 0u
-    for (i: UInt? in 1u..3u) {
-        result = sum(result, i)
-    }
-    return if (result == 6u) "OK" else "fail: $result"
+//abstract class CLASSS {
+//    abstract fun foo()
+//}
+//
+//class DERIVED : CLASSS() {
+//    override fun foo() = Unit
+//}
+
+interface INTERFACE {
+    fun foo(i: Int, s: String)
+}
+interface INTERFACE2 {
+    fun boo(i: Int, s: String)
 }
 
-fun sum(i: UInt, z: UInt?): UInt {
-    return i + z!!
+class CLASS : INTERFACE, INTERFACE2 {
+    public override fun foo(i: Int, s: String) = Unit
+    public override fun boo(i: Int, s: String) = Unit
+}
+
+fun frrrrr(c: INTERFACE) {
+    c.foo(2, "123")
+}
+
+fun box(): String {
+    frrrrr(CLASS())
+    return "OK"
 }

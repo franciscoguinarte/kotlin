@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.backend.common.ir.Ir
 import org.jetbrains.kotlin.backend.common.ir.Symbols
 import org.jetbrains.kotlin.backend.common.ir.addChild
 import org.jetbrains.kotlin.backend.wasm.lower.WasmSharedVariablesManager
+import org.jetbrains.kotlin.backend.wasm.utils.DiscriminatedUnions
 import org.jetbrains.kotlin.backend.wasm.utils.WasmInlineClassesUtils
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor

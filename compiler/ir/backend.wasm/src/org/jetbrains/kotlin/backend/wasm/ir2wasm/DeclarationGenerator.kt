@@ -23,14 +23,17 @@ import org.jetbrains.kotlin.ir.expressions.IrBlockBody
 import org.jetbrains.kotlin.ir.expressions.IrConst
 import org.jetbrains.kotlin.ir.expressions.IrConstKind
 import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 import org.jetbrains.kotlin.name.parentOrNull
 import org.jetbrains.kotlin.wasm.ir.*
 
-class DeclarationGenerator(val context: WasmModuleCodegenContext, private val allowIncompleteImplementations: Boolean) : IrElementVisitorVoid {
+class DeclarationGenerator(
+    val context: WasmModuleCodegenContext,
+    private val allowIncompleteImplementations: Boolean,
+    private val hierarchyIntersectedUnions: DiscriminatedUnions<IrClass>,
+) : IrElementVisitorVoid {
 
     // Shortcuts
     private val backendContext: WasmBackendContext = context.backendContext
@@ -129,7 +132,7 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
         }
 
         val exprGen = functionCodegenContext.bodyGen
-        val bodyBuilder = BodyGenerator(functionCodegenContext)
+        val bodyBuilder = BodyGenerator(functionCodegenContext, hierarchyIntersectedUnions)
 
         require(declaration.body is IrBlockBody) { "Only IrBlockBody is supported" }
         declaration.body?.acceptVoid(bodyBuilder)
@@ -168,6 +171,29 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
         }
     }
 
+    private val classVtableTypeDeclarations = mutableMapOf<List<IrClass>, WasmStructDeclaration>()
+    private fun createDeclarationByInterfaceList(iFacesUnion: List<IrClass>) {
+        classVtableTypeDeclarations.getOrPut(iFacesUnion) {
+            val fields = iFacesUnion.mapIndexed { index, iFace ->
+                context.defineClassITableInterfaceSlot(iFace.symbol, index)
+                WasmStructFieldDeclaration(
+                    name = "{${iFace.fqNameWhenAvailable.toString()}.itable",
+                    type = WasmRefNullType(WasmHeapType.Type(context.referenceVTableGcType(iFace.symbol))),
+                    isMutable = false
+                )
+            }
+            WasmStructDeclaration(
+                name = "itable",
+                fields = fields,
+                superType = null
+            ).also { struct ->
+                iFacesUnion.forEach {
+                    context.defineClassITableGcTypeForInterface(it.symbol, struct)
+                }
+            }
+        }
+    }
+
     override fun visitClass(declaration: IrClass) {
         if (declaration.isAnnotationClass) return
         if (declaration.isExternal) return
@@ -190,23 +216,10 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
             return
         }
 
-        if (declaration.isInterface) {
-            val metadata = InterfaceMetadata(declaration, irBuiltIns)
-            for (method in metadata.methods) {
-                val methodSymbol = method.function.symbol
-                val table = WasmTable(
-                    elementType = WasmRefNullType(WasmHeapType.Type(context.referenceFunctionType(methodSymbol)))
-                )
-                context.defineInterfaceMethodTable(methodSymbol, table)
-            }
-            context.registerInterface(symbol)
-        } else {
-            val nameStr = declaration.fqNameWhenAvailable.toString()
-            val metadata = context.getClassMetadata(symbol)
-            val superClass = metadata.superClass
+        val nameStr = declaration.fqNameWhenAvailable.toString()
 
-            //VTable global declaration
-            val vtableFields = metadata.virtualMethods.map {
+        fun createVirtualTableStruct(methods: List<VirtualMethodMetadata>, name: String): WasmStructDeclaration {
+            val tableFields = methods.map {
                 WasmStructFieldDeclaration(
                     name = it.signature.name.asString(),
                     type = WasmRefNullType(WasmHeapType.Type(context.referenceFunctionType(it.function.symbol))),
@@ -214,16 +227,31 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
                 )
             }
 
-            val vtableName = "$nameStr.vtable"
-            val vtableStruct = WasmStructDeclaration(
-                name = vtableName,
-                fields = vtableFields,
-                superType = superClass?.let { context.referenceVTableGcType(superClass.klass.symbol) }
+            val tableStruct = WasmStructDeclaration(
+                name = name,
+                fields = tableFields,
+                superType = null
             )
-            context.defineVTableGcType(symbol, vtableStruct)
+            context.defineVTableGcType(symbol, tableStruct)
+            return tableStruct
+        }
+
+        if (declaration.isInterface) {
+            createVirtualTableStruct(
+                methods = InterfaceMetadata(declaration, irBuiltIns).methods,
+                name = "$nameStr.itable"
+            )
+            context.registerInterface(symbol)
+        } else {
+            val metadata = context.getClassMetadata(symbol)
+            val superClass = metadata.superClass
+
+            //Begin of VTable global declaration
+            val vtableName = "$nameStr.vtable"
+            val vtableStruct = createVirtualTableStruct(metadata.virtualMethods, vtableName)
 
             val vtableTypeReference = context.referenceVTableGcType(symbol)
-            val vtableGcType = WasmRefType(WasmHeapType.Type(vtableTypeReference))
+            val vtableRefGcType = WasmRefType(WasmHeapType.Type(vtableTypeReference))
 
             if (declaration.modality != Modality.ABSTRACT) {
                 val initVTableGlobal = buildWasmExpression {
@@ -231,17 +259,68 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
                         if (method.function.modality != Modality.ABSTRACT) {
                             buildInstr(WasmOp.REF_FUNC, WasmImmediate.FuncIdx(context.referenceFunction(method.function.symbol)))
                         } else {
-                            buildRefNull(vtableFields[i].type.getHeapType()) //This erased by DCE so abstract version appeared in non-abstract class
+                            check(allowIncompleteImplementations) {
+                                "Cannot find class implementation of method ${method.signature} in class ${declaration.fqNameWhenAvailable}"
+                            }
+                            buildRefNull(vtableStruct.fields[i].type.getHeapType()) //This erased by DCE so abstract version appeared in non-abstract class
                         }
                     }
                     buildStructNew(vtableTypeReference)
                 }
-                context.defineGlobal(symbol, WasmGlobal(vtableName, vtableGcType, false, initVTableGlobal))
+                context.defineGlobalVTable(
+                    irClass = symbol,
+                    wasmGlobal = WasmGlobal(vtableName, vtableRefGcType, false, initVTableGlobal)
+                )
             }
             //End of VTable global declaration
 
+            //Begin of ITable global declaration
+            val firstInterfaceForNonAbstractClass =
+                if (declaration.modality != Modality.ABSTRACT) declaration.firstInterfaceForClass() else null
+            if (firstInterfaceForNonAbstractClass != null) {
+                val classInterfaceType = context.referenceClassITableGcTypeForInterface(firstInterfaceForNonAbstractClass.symbol)
+                val interfaceList = hierarchyIntersectedUnions.getUnion(firstInterfaceForNonAbstractClass)
+                createDeclarationByInterfaceList(interfaceList)
+                val initITableGlobal = buildWasmExpression {
+                    for (iFace in interfaceList) {
+                        if (metadata.interfaces.contains(iFace)) {
+                            InterfaceMetadata(iFace, irBuiltIns).methods.forEach { method ->
+                                val classMethod: VirtualMethodMetadata? = metadata.virtualMethods
+                                    .find { it.signature == method.signature && it.function.modality != Modality.ABSTRACT }  // TODO: Use map
+
+                                if (classMethod == null && !allowIncompleteImplementations) {
+                                    error("Cannot find interface implementation of method ${method.signature} in class ${declaration.fqNameWhenAvailable}")
+                                }
+
+                                if (classMethod != null) {
+                                    val functionTypeReference = context.referenceFunction(classMethod.function.symbol)
+                                    buildInstr(WasmOp.REF_FUNC, WasmImmediate.FuncIdx(functionTypeReference))
+                                } else {
+                                    //This erased by DCE so abstract version appeared in non-abstract class
+                                    buildRefNull(WasmHeapType.Type(context.referenceFunctionType(method.function.symbol)))
+                                }
+                            }
+                            buildStructNew(context.referenceVTableGcType(iFace.symbol))
+                        } else {
+                            buildRefNull(WasmHeapType.Type(context.referenceVTableGcType(iFace.symbol)))
+                        }
+                    }
+                    buildStructNew(classInterfaceType)
+                }
+
+                val wasmClassIFaceGlobal = WasmGlobal(
+                    name = "${declaration.fqNameWhenAvailable.toString()}.classITable",
+                    type = WasmRefType(WasmHeapType.Type(classInterfaceType)),
+                    isMutable = false,
+                    init = initITableGlobal
+                )
+                context.defineGlobalClassITable(symbol, wasmClassIFaceGlobal)
+            }
+            //End of ITable global declaration
+
             val fields = mutableListOf<WasmStructFieldDeclaration>()
-            fields.add(WasmStructFieldDeclaration("vtable", vtableGcType, false))
+            fields.add(WasmStructFieldDeclaration("vtable", vtableRefGcType, false))
+            fields.add(WasmStructFieldDeclaration("itable", WasmRefNullType(WasmHeapType.Simple.Data), false))
             declaration.allFields(irBuiltIns).mapTo(fields) {
                 WasmStructFieldDeclaration(
                     name = it.name.toString(),
@@ -258,30 +337,6 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
             context.defineGcType(symbol, structType)
             context.registerClass(symbol)
             context.generateTypeInfo(symbol, binaryDataStruct(metadata))
-
-            // New type info model
-            if (declaration.modality != Modality.ABSTRACT) {
-                for (i in metadata.interfaces) {
-                    val interfaceImplementation = InterfaceImplementation(i.symbol, declaration.symbol)
-                    // TODO: Cache it
-                    val interfaceMetadata = InterfaceMetadata(i, irBuiltIns)
-                    val table = interfaceMetadata.methods.associate { method ->
-                        val classMethod: VirtualMethodMetadata? = metadata.virtualMethods
-                            .find { it.signature == method.signature && it.function.modality != Modality.ABSTRACT }  // TODO: Use map
-
-                        if (classMethod == null && !allowIncompleteImplementations) {
-                            error("Cannot find class implementation of method ${method.signature} in class ${declaration.fqNameWhenAvailable}")
-                        }
-                        val matchedMethod = classMethod?.let { context.referenceFunction(it.function.symbol) }
-                        method.function.symbol as IrFunctionSymbol to matchedMethod
-                    }
-
-                    context.registerInterfaceImplementationMethod(
-                        interfaceImplementation,
-                        table
-                    )
-                }
-            }
         }
 
         for (member in declaration.declarations) {
@@ -310,9 +365,9 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
         } ?: ConstantDataIntField("SuperTypeId", -1)
 
         val typeInfoContent = mutableListOf(typeInfo, superTypeId)
-        if (classMetadata.klass.modality != Modality.ABSTRACT) {
-            typeInfoContent.add(interfaceTable(classMetadata))
-        }
+//        if (classMetadata.klass.modality != Modality.ABSTRACT) {
+//            typeInfoContent.add(interfaceTable(classMetadata))
+//        }
 
         return ConstantDataStruct(
             "Class TypeInfo: ${classMetadata.klass.fqNameWhenAvailable} ",
@@ -371,7 +426,7 @@ class DeclarationGenerator(val context: WasmModuleCodegenContext, private val al
             init = initBody
         )
 
-        context.defineGlobal(declaration.symbol, global)
+        context.defineGlobalField(declaration.symbol, global)
     }
 }
 
