@@ -1,6 +1,5 @@
 plugins {
     kotlin("js")
-    id("kotlin-dce-js")
     `maven-publish`
 }
 
