@@ -90,11 +90,11 @@ class JsMultiModuleCache(private val moduleArtifacts: List<ModuleArtifact>) {
 
     fun loadProgramHeadersFromCache(): List<CachedModuleInfo> {
         return moduleArtifacts.map { artifact ->
-            val cachedInfo = artifact.fetchModuleInfo()
-            val actualInfo = if (cachedInfo == null || (artifact.fileArtifacts.any { it.isModified() })) {
-                CachedModuleInfo(artifact, artifact.loadJsIrModule().makeModuleHeader())
-            } else {
-                cachedInfo
+            fun loadModuleInfo() = CachedModuleInfo(artifact, artifact.loadJsIrModule().makeModuleHeader())
+            val actualInfo = when {
+                artifact.forceRebuildJs -> loadModuleInfo()
+                artifact.fileArtifacts.any { it.isModified() } -> loadModuleInfo()
+                else -> artifact.fetchModuleInfo() ?: loadModuleInfo()
             }
             headerToCachedInfo[actualInfo.jsIrHeader] = actualInfo
             actualInfo

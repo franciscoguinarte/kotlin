@@ -25,7 +25,12 @@ class SrcFileArtifact(val srcFilePath: String, private val fragment: JsIrProgram
     fun isModified() = fragment != null
 }
 
-class ModuleArtifact(moduleName: String, val fileArtifacts: List<SrcFileArtifact>, val artifactsDir: File? = null) {
+class ModuleArtifact(
+    moduleName: String,
+    val fileArtifacts: List<SrcFileArtifact>,
+    val artifactsDir: File? = null,
+    val forceRebuildJs: Boolean = false
+) {
     val moduleSafeName = moduleName.safeModuleName
 
     fun loadJsIrModule(): JsIrModule {

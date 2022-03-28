@@ -4,4 +4,4 @@ STEP 0:
 
 STEP 1:
     dependencies: stdlib
-    flags: FP
+    flags: FP UNUSED

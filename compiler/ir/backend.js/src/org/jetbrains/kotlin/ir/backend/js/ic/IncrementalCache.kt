@@ -36,6 +36,7 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
     private enum class CacheState { NON_LOADED, FETCHED_FOR_DEPENDENCY, FETCHED_FULL }
 
     private var state = CacheState.NON_LOADED
+    private var forceRebuildJs = false
 
     private val cacheDir = File(cachePath)
     private val signatureToIdMapping = mutableMapOf<String, Map<IdSignature, Int>>()
@@ -232,6 +233,7 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
 
     private fun clearCacheAfterCommit() {
         state = CacheState.FETCHED_FOR_DEPENDENCY
+        forceRebuildJs = deletedSrcFiles.isNotEmpty()
         signatureToIdMapping.clear()
         usedInlineFunctions.clear()
         srcFilesInOrderFromKLib = emptyList()
@@ -261,7 +263,8 @@ class IncrementalCache(private val library: KotlinLibrary, cachePath: String) : 
         fileArtifacts = fingerprints.keys.map {
             SrcFileArtifact(it, fragments[it], getBinaryAstPath(it))
         },
-        artifactsDir = cacheDir
+        artifactsDir = cacheDir,
+        forceRebuildJs = forceRebuildJs
     )
 
     fun invalidate() {

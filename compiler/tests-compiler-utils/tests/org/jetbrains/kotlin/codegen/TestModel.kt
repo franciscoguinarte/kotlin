@@ -10,7 +10,7 @@ import java.util.regex.Pattern
 
 class ProjectInfo(val name: String, val modules: List<String>, val steps: List<ProjectBuildStep>, val muted: Boolean) {
 
-    class ProjectBuildStep(val id: Int, val order: List<String>)
+    class ProjectBuildStep(val id: Int, val order: List<String>, val rebuiltJS: List<String>)
 }
 
 class ModuleInfo(val moduleName: String) {
@@ -52,14 +52,15 @@ class ModuleInfo(val moduleName: String) {
 }
 
 enum class StepDirectives(val mnemonic: String) {
-    FAST_PATH_UPDATE("FP")
+    FAST_PATH_UPDATE("FP"),
+    UNUSED_MODULE("UNUSED")
 }
 
 const val MODULES_LIST = "MODULES"
 const val PROJECT_INFO_FILE = "project.info"
 const val MODULE_INFO_FILE = "module.info"
 
-private val STEP_PATTERN = Pattern.compile("^\\s*STEP\\s+(\\d+)\\s*:?$")
+private val STEP_PATTERN = Pattern.compile("^\\s*STEP\\s+(\\d+)\\.*(\\d+)?\\s*:?$")
 
 private val MODIFICATION_PATTERN = Pattern.compile("^([UD])\\s*:(.+)$")
 
@@ -97,8 +98,9 @@ abstract class InfoParser<Info>(protected val infoFile: File) {
 class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
 
 
-    private fun parseStep(stepId: Int): ProjectInfo.ProjectBuildStep {
+    private fun parseStep(): Pair<List<String>, List<String>> {
         val order = mutableListOf<String>()
+        val rebuiltJS = mutableListOf<String>()
 
         loop { line ->
             val splitIndex = line.indexOf(':')
@@ -113,10 +115,14 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
 
             ++lineCounter
 
+            fun String.splitModules() = split(",").map { it.trim() }.filter { it.isNotBlank() }
+
             when (op) {
                 "libs" -> {
-                    val args = splitted[1]
-                    args.split(",").filter { it.isNotBlank() }.forEach { order.add(it.trim()) }
+                    order += splitted[1].splitModules()
+                }
+                "dirty js" -> {
+                    rebuiltJS += splitted[1].splitModules()
                 }
                 else -> println(diagnosticMessage("Unknown op $op", line))
             }
@@ -124,7 +130,7 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
             false
         }
 
-        return ProjectInfo.ProjectBuildStep(stepId, order)
+        return order to rebuiltJS
     }
 
     override fun parse(entryName: String): ProjectInfo {
@@ -154,8 +160,11 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
                 op.matches(STEP_PATTERN.toRegex()) -> {
                     val m = STEP_PATTERN.matcher(op)
                     if (!m.matches()) throwSyntaxError(line)
-                    val stepId = Integer.parseInt(m.group(1))
-                    steps.add(parseStep(stepId))
+
+                    val firstId = Integer.parseInt(m.group(1))
+                    val lastId = m.group(2)?.let { Integer.parseInt(it) } ?: firstId
+                    val (order, rebuiltJS) = parseStep()
+                    steps += (firstId..lastId).map { ProjectInfo.ProjectBuildStep(it, order, rebuiltJS) }
                 }
                 else -> println(diagnosticMessage("Unknown op $op", line))
             }
