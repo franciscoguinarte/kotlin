@@ -1,8 +1,9 @@
 plugins {
     kotlin("js")
-    id("kotlin-dce-js")
     `maven-publish`
 }
+
+apply(plugin = "kotlin-dce-js")
 
 group = "com.example"
 version = "1.0"
