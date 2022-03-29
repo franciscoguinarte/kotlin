@@ -93,14 +93,9 @@ struct ObjHeader {
   }
 
   // Unsafe cast to ArrayHeader. Use carefully!
-  ArrayHeader* array() {
-      RuntimeAssert(type_info()->IsArray(), "Must be an array");
-      return reinterpret_cast<ArrayHeader*>(this);
-  }
-  const ArrayHeader* array() const {
-      RuntimeAssert(type_info()->IsArray(), "Must be an array");
-      return reinterpret_cast<const ArrayHeader*>(this);
-  }
+  // TODO: RuntimeAssert on type_info()->IsArray()?
+  ArrayHeader* array() { return reinterpret_cast<ArrayHeader*>(this); }
+  const ArrayHeader* array() const { return reinterpret_cast<const ArrayHeader*>(this); }
 
   inline bool permanent() const {
     return hasPointerBits(typeInfoOrMeta_, OBJECT_TAG_PERMANENT_CONTAINER);
