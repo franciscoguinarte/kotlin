@@ -518,6 +518,7 @@ internal val bitcodePhase = NamedCompilerPhase(
         name = "Bitcode",
         description = "LLVM Bitcode generation",
         lower = contextLLVMSetupPhase then
+                autoboxInlinePhase then
                 returnsInsertionPhase then
                 buildDFGPhase then
                 devirtualizationAnalysisPhase then
