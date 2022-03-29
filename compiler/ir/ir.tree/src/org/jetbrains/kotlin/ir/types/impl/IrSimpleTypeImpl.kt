@@ -83,16 +83,6 @@ class IrSimpleTypeImpl(
         annotations: List<IrConstructorCall>,
         abbreviation: IrTypeAbbreviation? = null
     ) : this(null, classifier, SimpleTypeNullability.fromHasQuestionMark(hasQuestionMark), arguments, annotations, abbreviation)
-
-    constructor(
-        kotlinType: KotlinType?,
-        classifier: IrClassifierSymbol,
-        hasQuestionMark: Boolean,
-        arguments: List<IrTypeArgument>,
-        annotations: List<IrConstructorCall>,
-        abbreviation: IrTypeAbbreviation? = null
-    ) : this(kotlinType, classifier, SimpleTypeNullability.fromHasQuestionMark(hasQuestionMark), arguments, annotations, abbreviation)
-
 }
 
 class IrSimpleTypeBuilder {
