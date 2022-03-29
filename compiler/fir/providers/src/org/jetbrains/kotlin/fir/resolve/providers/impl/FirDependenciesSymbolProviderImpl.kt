@@ -10,9 +10,11 @@ import org.jetbrains.kotlin.fir.ThreadSafeMutableState
 import org.jetbrains.kotlin.fir.caches.createCache
 import org.jetbrains.kotlin.fir.caches.firCachesFactory
 import org.jetbrains.kotlin.fir.caches.getValue
+import org.jetbrains.kotlin.fir.moduleData
 import org.jetbrains.kotlin.fir.nullableModuleData
 import org.jetbrains.kotlin.fir.resolve.providers.FirDependenciesSymbolProvider
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolProviderInternals
+import org.jetbrains.kotlin.fir.resolve.providers.firProvider
 import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
 import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassLikeSymbol
@@ -37,7 +39,7 @@ open class FirDependenciesSymbolProviderImpl(session: FirSession) : FirDependenc
         (moduleData.dependencies + moduleData.friendDependencies + moduleData.dependsOnDependencies)
             .mapNotNull { session.sessionProvider?.getSession(it) }
             .sortedBy { it.kind }
-            .map { it.symbolProvider }
+            .map { if (it.kind == FirSession.Kind.Source && it.moduleData in moduleData.dependsOnDependencies) it.firProvider.symbolProvider else it.symbolProvider }
     }
 
     @OptIn(FirSymbolProviderInternals::class, ExperimentalStdlibApi::class)
